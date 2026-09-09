@@ -122,7 +122,12 @@ public class AuthenticationManager : Singleton<AuthenticationManager>
             LoginPanelGUI.IsBanned = loginResult.MemberAuthenticationResult == MemberAuthenticationResult.IsBanned;
             if (Application.isEditor || Application.platform == RuntimePlatform.WebGLPlayer)
             {
-                ApplicationDataManager.Instance.LockApplication(LocalizedStrings.YourAccountHasBeenBanned);
+                // Editor/WebGL lock the app on a login failure. Only show the "banned" message when the
+                // account is actually banned; otherwise surface the real reason (set just above on
+                // LoginPanelGUI.ErrorMessage, e.g. "Login Failed: InvalidMember") so a missing account or
+                // version mismatch isn't misdiagnosed as a ban — which previously cost a debug session.
+                ApplicationDataManager.Instance.LockApplication(
+                    LoginPanelGUI.IsBanned ? LocalizedStrings.YourAccountHasBeenBanned : LoginPanelGUI.ErrorMessage);
             }
             else
             {

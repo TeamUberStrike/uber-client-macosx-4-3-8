@@ -387,7 +387,10 @@ public class WeaponController : Singleton<WeaponController>, IWeaponController
                     }
                     else
                     {
-                        Debug.LogError("SetPickupWeapon failed because item of the same class already equipped");
+                        // Expected gameplay, not an error: you walked over a weapon
+                        // pickup whose class you already hold. Kept as an informational
+                        // log so it stops spamming the console as a red error.
+                        Debug.Log("SetPickupWeapon skipped: item of the same class already equipped");
                     }
                 }
             }
@@ -671,12 +674,25 @@ public class WeaponController : Singleton<WeaponController>, IWeaponController
 
     private void PrimaryFireCallback(InputChangeEvent ev, LoadoutSlotType slotType)
     {
-        if (ev.IsDown && CanPlayerShoot)
+        if (_weapon == null || !_weapon.HasWeapon) return;
+
+        if (ev.IsDown)
         {
-            if (_weapon != null && _weapon.HasWeapon)
+            // QS stuck-trigger fix for public issue #45 (Part 1/2):
+            // previously a press-edge arriving during the 200ms
+            // _weaponSwitchTimeout lockout fell through to the else branch
+            // and called OnPrimaryFire(false), clobbering the handler's
+            // _isTriggerPulled to false. Since InputChangeEvents only fire
+            // on state transitions, no further event arrived while the user
+            // kept LMB held — full-auto stalled and semi-auto needed a
+            // release-and-repress. Now a press during lockout is simply
+            // dropped; release events still flow through normally. Part 2
+            // (LateUpdate reconciliation below) synthesizes the press once
+            // the lockout clears if LMB is still physically held.
+            if (CanPlayerShoot)
                 _weapon.InputHandler.OnPrimaryFire(true);
         }
-        else if (_weapon != null)
+        else
         {
             GameState.LocalCharacter.IsFiring = false;
             _weapon.InputHandler.OnPrimaryFire(false);
@@ -704,6 +720,32 @@ public class WeaponController : Singleton<WeaponController>, IWeaponController
     {
         if (CanPlayerShoot)
         {
+            // QS stuck-trigger fix for public issue #45 (Part 2/2):
+            // if LMB is physically held but the handler's trigger state is
+            // false (because the press-edge arrived during the switch
+            // lockout and was dropped by Part 1, OR because InputHandler.Stop
+            // cleared _isTriggerPulled while the gate was blocked),
+            // synthesize the missing press now that the gate is open.
+            // Idempotent when the real press event already arrived in the
+            // same frame — handlers gate further work on their own internal
+            // trigger state. _reconciledFireHeld prevents re-synthesizing on
+            // every frame of a continuous hold.
+            if (_weapon != null && _weapon.HasWeapon)
+            {
+                if (Input.GetMouseButton(0))
+                {
+                    if (!_reconciledFireHeld)
+                    {
+                        _weapon.InputHandler.OnPrimaryFire(true);
+                        _reconciledFireHeld = true;
+                    }
+                }
+                else
+                {
+                    _reconciledFireHeld = false;
+                }
+            }
+
             //single fire shots
             if (_weapon != null && _weapon.HasWeapon && _weaponSwitchTimeout < Time.time)
             {
@@ -725,6 +767,11 @@ public class WeaponController : Singleton<WeaponController>, IWeaponController
         }
         else
         {
+            // Lockout just (re-)engaged: drop the reconciliation latch so
+            // that when it clears, a still-held LMB is replayed as a fresh
+            // press edge.
+            _reconciledFireHeld = false;
+
             if (GameState.HasCurrentPlayer)
                 GameState.LocalCharacter.IsFiring = false;
 
@@ -928,6 +975,12 @@ public class WeaponController : Singleton<WeaponController>, IWeaponController
     private int _pickupWeaponEventCount = 0;
     private float _pickUpWeaponAutoRemovalTime = 0;
     private int _projectileId;
+
+    // Latch for the QS press-during-lockout reconciliation in LateUpdate.
+    // True while LMB is held and the handler has already been told about
+    // it via the reconciled press; reset on release or when the gate
+    // re-engages. Prevents re-synthesizing a press every frame.
+    private bool _reconciledFireHeld = false;
 
     private LoadoutSlotType _lastLoadoutType = LoadoutSlotType.WeaponPrimary;
 

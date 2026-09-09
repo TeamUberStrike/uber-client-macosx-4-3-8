@@ -405,6 +405,19 @@ public class AxisInputChannel : IInputChannel, IByteArray
 
     public float RawValue()
     {
+        // Mouse scroll wheel is a DISCRETE input — each wheel click produces
+        // a one-frame delta. Input.GetAxis applies axis smoothing (designed
+        // for analog sticks), which ramps the value across several frames
+        // before it crosses the 0.1 deadzone in Listen(). The result is
+        // visible weapon-switch delay per scroll click — issue #45 "QS
+        // delay" on the public repo. GetAxisRaw returns the unsmoothed
+        // per-frame delta, so a click triggers Next/PrevWeapon on the same
+        // frame. Leave analog channels (Mouse X/Y, gamepad sticks) on
+        // GetAxis so look/aim smoothing is preserved.
+        if (_axis.StartsWith("Mouse ScrollWheel"))
+        {
+            return Input.GetAxisRaw(_axis);
+        }
         return Input.GetAxis(_axis);
     }
 

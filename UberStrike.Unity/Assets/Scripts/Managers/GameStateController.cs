@@ -38,6 +38,16 @@ public class GameStateController : Singleton<GameStateController>
 
     public void CreateGame(GameMetaData game)
     {
+        // Dismiss the menu page we launched from (Play / Training / Create-Game).
+        // Without this the launching PageScene stays active once the match loads,
+        // so its OnGUI keeps running underneath gameplay -> console spam + a menu
+        // overlay bleeding into the match. UnloadCurrentPage() is the canonical
+        // page teardown (same call LoadPage uses on a page switch); it deactivates
+        // the page GameObject, resets the current page to None, and drops the menu
+        // MouseOrbit. No-op if no page is up. Pure UI teardown -- no map, shader,
+        // material or lightmap involvement.
+        MenuPageManager.Instance.UnloadCurrentPage();
+
         AvatarBuilder.Instance.UpdateLocalAvatar();
 
         LobbyConnectionManager.Stop();

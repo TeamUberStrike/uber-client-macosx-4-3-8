@@ -126,7 +126,7 @@ CGINCLUDE
 		v2f o;
 		
 		half3 worldSpaceVertex = mul(unity_ObjectToWorld,(v.vertex)).xyz;
-		half3 vtxForAni = (worldSpaceVertex).xzz * 1.0; 			
+		half3 vtxForAni = (worldSpaceVertex).xzz * (1.0 / length(unity_ObjectToWorld._m00_m10_m20)); 			
 
 		half3 nrml;
 		half3 offsets;
@@ -223,7 +223,7 @@ CGINCLUDE
 		v2f_noGrab o;
 		
 		half3 worldSpaceVertex = mul(unity_ObjectToWorld,(v.vertex)).xyz;
-		half3 vtxForAni = (worldSpaceVertex).xzz * 1.0; 			
+		half3 vtxForAni = (worldSpaceVertex).xzz * (1.0 / length(unity_ObjectToWorld._m00_m10_m20)); 			
 
 		half3 nrml;
 		half3 offsets;

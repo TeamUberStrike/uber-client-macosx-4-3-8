@@ -85,6 +85,48 @@ public class StatueqaplaqgueSpawner : MonoBehaviour
         // CreatePrimitive attaches a BoxCollider; leave it for wall-blocking
         // parity with the UB6 MeshCollider (the cube and scaled-mesh volumes
         // are equivalent here).
-        SceneManager.MoveGameObjectToScene(go, scene);
+
+        // Re-home the plaque onto the Temple map root instead of leaving it in
+        // this raw additive scene. MapConfiguration.Awake -> LevelManager.
+        // AddLoadedMap already reparented the Temple's content out of this scene
+        // and into 'Levels' (under the persistent 'Latest' scene) BEFORE this
+        // sceneLoaded callback ran, so this scene is now an empty abandoned
+        // container. Leaving the plaque here made it float in world space with no
+        // owning map, so it stayed visible under EVERY other map the player then
+        // joined (the reported Spaceport / Monkey-Island bleed). Parenting it
+        // under the map root ties its lifetime + visibility to the Temple: it is
+        // torn down with the map and respawned on re-entry. Pure transform
+        // reparenting -- no material / shader / lightmap change, so BeastLighting
+        // is untouched (the plaque is RealtimeEmissive, never in the baked array).
+        Transform mapRoot = FindTempleMapRoot();
+        if (mapRoot != null)
+        {
+            // worldPositionStays=true: preserve the exact world placement the
+            // constants above were tuned to; we only change ownership.
+            go.transform.SetParent(mapRoot, true);
+        }
+        else
+        {
+            Debug.LogWarning("[Statueqaplaqgue] Temple map root '" + TempleSceneName +
+                "' not found; leaving plaque in scene '" + scene.name + "'.");
+            SceneManager.MoveGameObjectToScene(go, scene);
+        }
+    }
+
+    // Locate the Temple's reparented map root. Matches the MapConfiguration whose
+    // GameObject name is the Temple scene name (map roots keep the scene name --
+    // see BeastLightmapLoader.RestoreByName(gameObject.name)). The include-inactive
+    // search resolves the root whether it is already active or still cached-
+    // inactive, and naturally ignores every other loaded map.
+    private static Transform FindTempleMapRoot()
+    {
+        var maps = Object.FindObjectsOfType<MapConfiguration>(true);
+        foreach (var m in maps)
+        {
+            if (m != null && m.gameObject.name == TempleSceneName)
+                return m.transform;
+        }
+        var byName = GameObject.Find(TempleSceneName);
+        return byName != null ? byName.transform : null;
     }
 }
