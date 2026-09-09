@@ -9,7 +9,7 @@ class TrainingState : IState
         _stateMachine = new StateMachine();
         _stateMachine.RegisterState((int)GameStateId.PregameLoadout, new InGamePregameLoadoutState());
         _stateMachine.RegisterState((int)GameStateId.Playing, new InGamePlayingState(_stateMachine, _hudDrawFlag));
-        _stateMachine.RegisterState((int)GameStateId.Killed, new InGamePlayerKilledState(_stateMachine, _hudDrawFlag, false));
+        _stateMachine.RegisterState((int)GameStateId.Killed, new InGamePlayerKilledState(_stateMachine, _hudDrawFlag, true));
         _stateMachine.RegisterState((int)GameStateId.Paused, new InGamePlayerPausedState(_stateMachine));
     }
 

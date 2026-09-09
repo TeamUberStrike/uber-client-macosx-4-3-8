@@ -63,7 +63,11 @@ public class ProjectileDetonator
                     Vector3 forceDirection = hit.transform.position - position;//closestPoint - position;
                     if (forceDirection.sqrMagnitude < 0.01f)
                     {
-                        forceDirection = dir;
+                        // Explosion is right at the target's origin (a straight-down cannon shot at your
+                        // own feet — the vertical rocket-jump). Retail fell back to the projectile
+                        // direction here, which is DOWNWARD for a straight-down shot and shoves you into
+                        // the ground. Push UP instead so the vertical rocket-jump launches you.
+                        forceDirection = Vector3.up;
                     }
                     else
                     {

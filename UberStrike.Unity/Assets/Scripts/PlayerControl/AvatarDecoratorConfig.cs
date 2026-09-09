@@ -16,6 +16,14 @@ public class AvatarDecoratorConfig : MonoBehaviour
     private Color _skinColor;
     private List<Material> _materials;
 
+    // SKIN-TONE LIFT. The skin albedo (e.g. LutzSkin.psd flesh ~ (0.85,0.68,0.52)) is a natural
+    // light-tan meant to be shown near-white; the game multiplies the account SkinColor onto it. A dark
+    // account value (a saved tan such as #C69C6D = (0.78,0.61,0.43)) multiplies the albedo DOWN into
+    // orange-brown. This lifts the applied skin colour toward white so skin reads natural regardless of
+    // the server value. Range [0,1]: 0 = raw account value (original behaviour, customisation honoured),
+    // 1 = pure white (shows the raw albedo). TUNABLE: lower it to re-introduce the account skin tint.
+    public static float SkinToneLift = 0.85f;
+
     private void Awake()
     {
         _materials = new List<Material>();
@@ -49,11 +57,12 @@ public class AvatarDecoratorConfig : MonoBehaviour
         {
             _skinColor = value;
             UpdateMaterials();
+            var applied = Color.Lerp(_skinColor, Color.white, Mathf.Clamp01(SkinToneLift));
             foreach (var m in _materials)
             {
                 if (m.name.Contains("Skin"))
                 {
-                    m.color = _skinColor;
+                    m.color = applied;
                 }
             }
         }

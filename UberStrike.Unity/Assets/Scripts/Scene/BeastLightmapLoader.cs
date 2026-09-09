@@ -1151,6 +1151,10 @@ public static class BeastLightmapLoader
         { "LevelCuberStrike", 0.283f },       // was doubled to 0.567 → causes blueish tint
         { "LevelSpaceportAlpha", 0.470f },     // was slashed to 0.1 → way too dark
         { "LevelTempleOfTheRaven", 0.261f },   // was reduced to 0.147 → too dark
+        // Ported from origin/main. Aqualab's over-brightness is fixed by disabling its realtime
+        // point lights (see AdjustSceneLights), so it keeps its natural ambient. SuperPRISM's lights
+        // are baked, so a mild ambient trim stays as a fallback. Tunable after a visual check.
+        { "LevelSuperPRISMReactor", 0.55f },
     };
 
     // Per-map target intensity for the scene's primary directional light, overriding
@@ -1473,16 +1477,53 @@ public static class BeastLightmapLoader
 #if UNITY_EDITOR
                 light.lightmapBakeType = LightmapBakeType.Realtime;
 #endif
-                light.intensity = 0.5f;
+                light.intensity = 0.8f;    // was 0.5 - lobby read too dim
+                light.color = Color.white; // was a warm tint that browned the (dynamic) avatar; neutralize it
             }
-            Debug.Log($"[BeastLightmapLoader] Lobby: Directional '{light.gameObject.name}' → realtime, intensity={light.intensity}");
+            Debug.Log($"[BeastLightmapLoader] Lobby: Directional '{light.gameObject.name}' -> realtime, intensity={light.intensity}, color={light.color}");
         }
 
-        // Restore ambient to match 3.5.5 LevelSpaceship RenderSettings
+        // Lobby ambient. KNOB 1 of 2. Original 3.5.5 ambient was 0.246 neutral grey; it only read "too
+        // dark" in the migrated project because the migration ALSO killed the realtime directional that
+        // used to light the room (see the key light below). With that directional restored, ambient can
+        // sit back near the original instead of being bandaged up to 0.42 (which over-flattened the
+        // avatar). Kept neutral grey (no colour cast, so no "brown" tint from the fill). Nudge up toward
+        // 0.35 if the room still reads dark after the directional is in.
+        const float LobbyAmbient = 0.28f;
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-        RenderSettings.ambientLight = new Color(0.246f, 0.246f, 0.246f, 1f);
+        RenderSettings.ambientLight = new Color(LobbyAmbient, LobbyAmbient, LobbyAmbient, 1f);
         RenderSettings.ambientIntensity = 1.0f;
-        Debug.Log("[BeastLightmapLoader] Lobby: Ambient → 0.246 flat (matching 3.5.5 LevelSpaceship)");
+        Debug.Log($"[BeastLightmapLoader] Lobby: Ambient -> {LobbyAmbient} flat (near original 0.246; directional now carries the room)");
+
+        // LOBBY KEY LIGHT -- restores the realtime directional the migration deactivated. KNOB 2 of 2.
+        // Root cause of BOTH "room darker" and "avatar skin is brown": original LevelSpaceship had ONE
+        // realtime directional (Light1032561182 @ 0.5, m_ActuallyLightmapped=0) that lit the room AND the
+        // dynamic avatar, plus two BAKED fill lights (0.05 + 0.10) that are already inside the Beast
+        // lightmaps. The migration left all three on INACTIVE GameObjects, so the room lost its only
+        // realtime directional and the avatar -- a SkinnedMeshRenderer with no lightmap/probes, on layer
+        // Default(0), skin-colour white -- was left on flat ambient alone: legacy-Diffuse tan texture x
+        // dim grey = muddy "brown". An earlier attempt culled this light to the PLAYER layers (18/20/19),
+        // but the lobby avatar built by AvatarBuilder.CreateLocalAvatar stays on layer Default(0) (SetLayers
+        // is only called for REMOTE avatars) -- so it hit nothing. Fix = re-create that one realtime
+        // directional with cullingMask = Everything, exactly as the original had it. This is NOT double-
+        // lighting: the directional was realtime (never baked), so adding it back does not double-count the
+        // baked fills that live in the lightmaps. It restores the original ambient + 1-realtime-directional
+        // model. Lobby-scoped: this method runs only for the lobby (scene "Latest"/"LevelSpaceship"), and
+        // the map-load path (AdjustSceneLights) destroys any BeastLobbyAvatarLight before a map renders, so
+        // it can never touch another map's lighting. Drop any stale copy first (idempotent on re-entry).
+        foreach (var stale in Object.FindObjectsOfType<Light>())
+            if (stale != null && (stale.gameObject.name == "BeastLobbyAvatarLight" || stale.gameObject.name == "BeastWeaponsLight"))
+                Object.Destroy(stale.gameObject);
+
+        var avatarLightGO = new GameObject("BeastLobbyAvatarLight");
+        var avatarKey = avatarLightGO.AddComponent<Light>();
+        avatarKey.type = LightType.Directional;
+        avatarKey.color = Color.white;
+        avatarKey.intensity = 0.65f;                        // ~= original 0.5 + a touch for the now-ambient-light fills; nudge 0.5..0.8
+        avatarKey.shadows = LightShadows.None;               // original realtime lobby directional cast no shadows
+        avatarLightGO.transform.rotation = Quaternion.Euler(50f, -30f, 0f);  // angled key (upper front-right); tune angle to taste
+        avatarKey.cullingMask = -1;                          // Everything -- lights the avatar (Default) AND the room, faithful to the original realtime directional
+        Debug.Log("[BeastLightmapLoader] Lobby: Spawned BeastLobbyAvatarLight (white directional, intensity=0.65, cullingMask=Everything; restores the migration-deactivated realtime rig)");
     }
 
     static IEnumerator DelayedLobbyAssign(LightmapData[] lightmapData)
@@ -1506,14 +1547,39 @@ public static class BeastLightmapLoader
         RenderSettings.ambientLight = new Color(0.246f, 0.246f, 0.246f, 1f);
         RenderSettings.ambientIntensity = 1.0f;
 
-        // Clean up BeastWeaponsLight objects from previous map loads
+        // Clean up BeastWeaponsLight + the lobby avatar key light from previous loads. Destroying
+        // BeastLobbyAvatarLight here keeps the lobby-only avatar light from bleeding into a map.
         foreach (var light in Object.FindObjectsOfType<Light>())
         {
-            if (light != null && light.gameObject.name == "BeastWeaponsLight")
+            if (light != null && (light.gameObject.name == "BeastWeaponsLight" || light.gameObject.name == "BeastLobbyAvatarLight"))
             {
                 Object.Destroy(light.gameObject);
-                Debug.Log("[BeastLightmapLoader] Destroyed old BeastWeaponsLight");
+                Debug.Log("[BeastLightmapLoader] Destroyed old " + light.gameObject.name);
             }
+        }
+
+        // Aqualab carries many REALTIME point/spot lights (68 at intensity 6-16) whose contribution is
+        // ALSO baked into the lightmaps -> they double-light every static surface -> the map renders far
+        // too bright (the user reported "Spotlights, Point lights & Lights are too bright"). The
+        // directional pass below already disables baked directional lights for this reason; do the same
+        // for the non-directional realtime lights here.
+        // NOTE: scoped to Aqualab ONLY. SuperPRISM was judged acceptable by the user with its point/spot
+        // lights left ON (the earlier filter disabled 0), so we must NOT touch its lights or we regress it.
+        if (sceneName == "LevelAqualabResearchHub")
+        {
+            int killed = 0;
+            foreach (var light in Object.FindObjectsOfType<Light>())
+            {
+                if (light == null || light.type == LightType.Directional) continue;
+                // The map's point/spot lights live in the persistent "Latest" runtime scene, not the
+                // Level* scene (same as the directional lights above), so match on NOT-the-lobby rather
+                // than the map name. BeastWeaponsLight is directional, already excluded above.
+                if (light.gameObject.scene.name == "LevelSpaceship") continue;   // never touch lobby lights
+                if (!light.enabled) continue;
+                light.enabled = false;
+                killed++;
+            }
+            Debug.Log($"[BeastLightmapLoader] {sceneName}: disabled {killed} realtime non-directional lights (baked into lightmaps; were double-lighting)");
         }
 
         // Original Unity 3.5.5 used "Single Lightmaps" (m_ActuallyLightmapped: 1) where

@@ -119,7 +119,9 @@ public class WeaponSlot
         switch (item.Configuration.InputHandlerType)
         {
             case WeaponInputHandlerType.SniperRifle:
-                InputHandler = new SniperRifleInputHandler(logic, isLocal, item.Configuration.ZoomInformation);
+                // Prefab _zoomInformation is clobbered when the loadout config is rebuilt, so force the
+                // intended per-weapon zoom here (see SniperZoomOverride).
+                InputHandler = new SniperRifleInputHandler(logic, isLocal, SniperZoomOverride.Resolve(item.Configuration));
                 break;
 
             case WeaponInputHandlerType.Minigun:
@@ -130,7 +132,7 @@ public class WeaponSlot
                 if (item.Configuration.SecondaryAction == WeaponSecondaryAction.ExplosionTrigger)
                     InputHandler = new ExplosionInputHandler(logic, isLocal);
                 else if (item.Configuration.SecondaryAction == WeaponSecondaryAction.IronSight)
-                    InputHandler = new IronsightInputHandler(logic, isLocal, item.Configuration.ZoomInformation);
+                    InputHandler = new IronsightInputHandler(logic, isLocal, SniperZoomOverride.Resolve(item.Configuration));
                 else if (item.Configuration.HasAutomaticFire)
                     InputHandler = new FullAutoWeaponInputHandler(logic, isLocal);
                 else
